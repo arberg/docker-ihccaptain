@@ -16,8 +16,8 @@
   </Description>
   <Category>HomeAutomation:</Category>
   <WebUI>http://[IP]:[PORT:8100]/</WebUI>
-  <TemplateURL>https://github.com/arberg/ihccaptain/docker.templates/</TemplateURL>
-  <Icon>https://github.com/arberg/ihccaptain/raw/master/docker.templates/icon.png</Icon>
+  <TemplateURL>https://raw.githubusercontent.com/arberg/docker-ihccaptain/master/docker.templates/ihccaptain.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/arberg/docker-ihccaptain/master/docker.templates/images/ihccaptain.png</Icon>
   <ExtraParams></ExtraParams>
   <Overview>
     See http://jemi.dk/ihc
@@ -31,7 +31,7 @@
         <Protocol>tcp</Protocol>
       </Port>
       <Port>
-        <HostPort>8443</HostPort>
+        <HostPort>9100</HostPort>
         <ContainerPort>443</ContainerPort>
         <Protocol>tcp</Protocol>
       </Port>
@@ -53,6 +53,6 @@
   </Environment>
   <BaseImage>ubuntu/ubuntu:18.04</BaseImage>
   <Config Name="WebUI Port" Target="80" Default="8080" Mode="tcp" Description="Container Port: 80" Type="Port" Display="always" Required="true" Mask="false">8100</Config>
-  <Config Name="Secure WebUI Port" Target="443" Default="8443" Mode="tcp" Description="Container Port: 443" Type="Port" Display="always" Required="true" Mask="false">8443</Config>
+  <Config Name="Secure WebUI Port" Target="443" Default="9100" Mode="tcp" Description="Container Port: 443" Type="Port" Display="always" Required="true" Mask="false">9100</Config>
   <Config Name="Appdata Path" Target="/opt/ihccaptain/data" Default="/mnt/user/appdata/ihccaptain/data" Mode="rw" Description="IHC Captain user data" Type="Path" Display="advanced-hide" Required="true" Mask="false">/mnt/user/appdata/ihccaptain/data</Config>
 </Container>
