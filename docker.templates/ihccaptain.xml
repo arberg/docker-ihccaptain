@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>IHCCaptain</Name>
+  <Date>2018-09-16</Date>
+  <Project>https://jemi.dk/ihc</Project>
+  <Repository>arberg/ihccaptain</Repository>
+  <Registry>https://hub.docker.com/r/arberg/ihccaptain/</Registry>
+  <DonateText>For my retirement.</DonateText>
+  <DonateLink>http://jemi.dk/ihc/#donation</DonateLink>
+  <DonateImage>https://www.paypalobjects.com/webstatic/en_US/btn/btn_donate_74x21.png</DonateImage>
+  <Network>bridge</Network>
+  <Privileged>true</Privileged>
+  <Support>https://www.ihc-user.dk/forum/forums/forum/39-ihc-captain/</Support>
+  <Description>
+     IHC Captain adds a web-front end for the LK IHC system, in which its possible to create events and interactions with different components such as Philips HUE.
+  </Description>
+  <Category>HomeAutomation:</Category>
+  <WebUI>http://[IP]:[PORT:8100]/</WebUI>
+  <TemplateURL>https://github.com/arberg/ihccaptain/docker.templates/</TemplateURL>
+  <Icon>https://github.com/arberg/ihccaptain/raw/master/docker.templates/icon.png</Icon>
+  <ExtraParams></ExtraParams>
+  <Overview>
+    See http://jemi.dk/ihc
+  </Overview>
+  <Networking>
+    <Mode>bridge</Mode>
+    <Publish>
+      <Port>
+        <HostPort>8100</HostPort>
+        <ContainerPort>80</ContainerPort>
+        <Protocol>tcp</Protocol>
+      </Port>
+      <Port>
+        <HostPort>8443</HostPort>
+        <ContainerPort>443</ContainerPort>
+        <Protocol>tcp</Protocol>
+      </Port>
+    </Publish>
+  </Networking>
+  <Data>
+    <Volume type="appdata">
+      <HostDir>/mnt/user/appdata/ihccaptain/data</HostDir>
+      <ContainerDir>/opt/ihccaptain/data</ContainerDir>
+      <Mode>rw</Mode>
+    </Volume>
+    <Volume>
+      <HostDir>/mnt/user/appdata/ihccaptain/host</HostDir>
+      <ContainerDir>/host</ContainerDir>
+      <Mode>rw</Mode>
+    </Volume>
+  </Data>
+  <Environment>
+  </Environment>
+  <BaseImage>ubuntu/ubuntu:18.04</BaseImage>
+  <Config Name="WebUI Port" Target="80" Default="8080" Mode="tcp" Description="Container Port: 80" Type="Port" Display="always" Required="true" Mask="false">8100</Config>
+  <Config Name="Secure WebUI Port" Target="443" Default="8443" Mode="tcp" Description="Container Port: 443" Type="Port" Display="always" Required="true" Mask="false">8443</Config>
+  <Config Name="Appdata Path" Target="/opt/ihccaptain/data" Default="/mnt/user/appdata/ihccaptain/data" Mode="rw" Description="IHC Captain user data" Type="Path" Display="advanced-hide" Required="true" Mask="false">/mnt/user/appdata/ihccaptain/data</Config>
+</Container>
