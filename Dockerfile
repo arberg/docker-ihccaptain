@@ -11,11 +11,11 @@ RUN apt-get update && apt-get install -y \
 	cron
 #RUN useradd pi
 
-# for php-7 in ubuntu 18.04.1 LTS 
+# for php-7 in ubuntu 18.04.1 LTS
 RUN apt-get update && apt-get install -y software-properties-common
 RUN	apt-add-repository -y ppa:ondrej/php
 
-# RUN chmod 755 /tmp/install/*.sh
+RUN chmod 755 /tmp/*.sh
 RUN ["/bin/bash", "-c", "/tmp/install_ubuntu.sh docker"]
 # Backup the generated serverconfig.json so we can later mount image with host-mounted /data folder and copy this file into it
 RUN cp -R /opt/ihccaptain/data /opt/ihccaptain/dataOrg
@@ -23,4 +23,4 @@ RUN cp -R /opt/ihccaptain/data /opt/ihccaptain/dataOrg
 EXPOSE 80
 EXPOSE 443
 
-CMD /app/run_ihc_captain_in_docker.sh 
+CMD /app/run_ihc_captain_in_docker.sh

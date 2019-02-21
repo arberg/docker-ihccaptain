@@ -3,4 +3,5 @@ set -ex
 
 . env.sh
 
-sudo docker build -t $USERNAME/$IMAGE:latest .
+chmod 755 host/*.sh
+docker build -t $USERNAME/$IMAGE:latest .
