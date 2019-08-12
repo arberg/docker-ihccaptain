@@ -12,6 +12,6 @@ Note that it may be necessary to change the default port to an unused port on yo
 
 ## How To build docker image again
 
-* Manuelly update file VERSION
+* Manually update file VERSION
 * run build.sh or just release.sh
  
