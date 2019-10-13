@@ -1,0 +1,1 @@
+./run.sh arberg/ihccaptain:$(cat VERSION)

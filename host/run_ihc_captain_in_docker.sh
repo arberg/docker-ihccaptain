@@ -5,7 +5,7 @@
 
 # https://docs.docker.com/config/containers/multi-service_container/
 
-SERVICE1=php7.0-fpm
+SERVICE1=php7.3-fpm
 SERVICE2=nginx
 SLEEP=2
 
@@ -47,9 +47,9 @@ while sleep $SLEEP; do
     echo "$SERVICE2: service status: $SERVICE_2_STATUS"
     echo "One of the processes has already exited."
     exit 1
-  # else 
+  # else
   #     service $SERVICE1 status
   #     service $SERVICE2 status
   #     echo OK
   fi
-done 
+done
