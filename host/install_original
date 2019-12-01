@@ -1,34 +1,140 @@
 #!/bin/bash
 #
-# IHC CAPTAIN INSTALLER - V1.07
+# IHC CAPTAIN INSTALLER - V1.13 - with custom and docker support
 #
 ######################################################################################
 # Setup variables
 ######################################################################################
 TEMP_DIR=/tmp
 
-# Calc windows!
-WT_HEIGHT=17
-WT_WIDTH=$(tput cols)
+#running a custom install not
+CUSTOM_INSTALL=false
+# automatic try and detect docker - can be forced by launching with docker as a argument
+INSIDE_DOCKER=false
+# run IHC Captain has this user
+USERNAME=pi
+# quick lookup are we a raspberry pi or not - actually it checks the os for rasbian
+IS_A_PI=false
 
-if [ -z "$WT_WIDTH" ] || [ "$WT_WIDTH" -lt 60 ]; then
-	WT_WIDTH=80
-fi
-if [ "$WT_WIDTH" -gt 178 ]; then
-	WT_WIDTH=120
-fi
-WT_MENU_HEIGHT=$(($WT_HEIGHT-7))
+# destionation dir
+DEST_DIR=/opt/ihccaptain
 
-# ALLOW TO DOWNLOAD AT TEST FILE NAMED
-DLFILEFIX=""
+#device info
+DEVICEMODEL=$(cat /proc/device-tree/model | tr '\0' '\n')
+
+#download file for IHC Captain
+DLURL=http://jemi.dk/ihc/files/
+
+# What to download
+DLFILE=ihccaptain$DLFILEFIX.tar.gz
 if [ "$1" == "test" ] || [ "$2" == "test" ]; then
-	DLFILEFIX=-new
+	DLFILE=ihccaptain-new.tar.gz
+fi
+
+# used for adding and removing stuff
+CHECKMARK="ihccaptainadded"
+
+# Add to cron info
+CRONCMD="find /mnt/ram/ihccaptain/logins/ -type f -mtime +2 -delete 2>&1"
+CRONJOB="0 * * * * $CRONCMD"
+
+# colors for prompts
+RTXT="\e[0;31m"
+GTXT="\e[0;32m"
+LGTXT="\e[1;32m"
+#no color
+BTXT="\e[0m"
+#bold white
+WTXT="\e[1;37m"
+
+#Skip APT-get install
+INSTALLAPT=true
+
+#Global error feedback
+GERROR=false
+
+# nginx webserver settings
+WEBPORT=80
+SSLPORT=443
+SSLINSTALL=true
+WEBINSTALL=true
+LETSENC=false
+DNSNAME=false
+EXTRASSL=/etc/ssl/certs/dhparam.pem
+
+SSLCERT1=/etc/ssl/certs/ssl-cert-snakeoil.pem
+SSLCERT2=/etc/ssl/private/ssl-cert-snakeoil.key
+CERTFILE=/etc/ssl/snakeoil.pem
+
+#INSIDE DOCKER then we dont ask a lot of questions
+if [[ -f /.dockerenv ]] || grep -Eq '(lxc|docker)' /proc/1/cgroup || [[ $@ == *"docker"* ]]; then
+	echo "IHC Captain custom installer for Docker..."
+	INSIDE_DOCKER=true;
+	USERNAME=root
+
+	# Wrapper functions for automatic installs
+	function whiptail {
+		INPUTSTR="$@"
+		if ( grep --quiet "msgbox" <<< "$INPUTSTR" ); then
+			TITLE=$(sed 's/.*--title \(.*\) --.*/\1/' <<< "$INPUTSTR")
+			MSG=$(sed 's/.*--msgbox \(.*\)/\1/' <<< "$INPUTSTR")
+			echo
+			echo "[$TITLE]"
+			echo "¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯"
+			echo $MSG | sed 's/\\n/\n/g'
+			echo
+			echo "-------------------------------------------------------------------------"
+			echo
+		else
+			echo "#########################################################################"
+			echo "### ERROR: $*"
+			echo "#########################################################################"
+		fi
+	}
+	function clear {
+		# avoid printing error 'Term'
+		echo
+		echo
+		echo
+	}
+	function tput {
+		# avoid error
+		echo
+	}
+fi
+
+#CUSTOM INSTALL OPTIONS if requested or running inside docker from the above
+if [ "$1" == "custominstall" ]  || $INSIDE_DOCKER ; then
+	CUSTOM_INSTALL=true
+
+	#INSIDE DOCKER then we dont ask a lot of questions
+	if ! $INSIDE_DOCKER ; then
+		clear
+		echo "IHC Captain custom installer..."
+		echo "Tast det brugernavn du vil have ihccaptain til at køre under og tryk enter"
+		read USERNAME
+	fi
+
+	# strip bad chars to improve input
+	USERNAME=$(echo "$USERNAME" | tr -dc '[:alnum:]\n\r')
+
+	# validate username
+	if [ -z $USERNAME ]; then
+		echo "Blank username is bad... bye!"
+		exit 0;
+	fi
+fi
+
+# find homedir for the user and check it okay
+HOMEDIR=$(awk -F: -v v="$USERNAME" '{if ($1==v) print $6}' /etc/passwd)
+if [ ! -d "${HOMEDIR}" ] ;  then
+	echo Fatal error - homedir not found or unable to check for user \"$USERNAME\"
+	exit 0
 fi
 
 ######################################################################################
-#Version check and install dir
+#Version check for OS etc
 ######################################################################################
-#Install dir - where will the website be installed into
 SILENTUPDATE=false
 if [ "$1" == "webupdate" ]; then
 	SILENTUPDATE=true
@@ -41,7 +147,7 @@ if [[ -r /etc/os-release ]]; then
 	DIST_VERSION="${DIST_VERSION%\"}"
 	DIST_VERSION="${DIST_VERSION#\"}"
 
-	if [[ $DIST_NAME != raspbian ]]; then
+	if ! $CUSTOM_INSTALL && [[ $DIST_NAME != raspbian ]]; then
 		if ($SILENTUPDATE) ; then
 			echo Failed to find OS/distribution:
 			echo $DIST_NAME
@@ -61,7 +167,7 @@ else
 	exit 1
 fi
 
-if [[ $DIST_VERSION -lt 9 ]]; then
+if ! $CUSTOM_INSTALL && [[ $DIST_VERSION -lt 9 ]]; then
 	if ($SILENTUPDATE) ; then
 		echo "Failed to find right debian distribution - should be stretch"
 		exit 1
@@ -70,46 +176,22 @@ if [[ $DIST_VERSION -lt 9 ]]; then
 	exit 1
 fi
 
-DEST_DIR=/opt/ihccaptain
-DEVICEMODEL=$(cat /proc/device-tree/model | tr '\0' '\n')
+# make lookups easier later on
+if [ $DIST_NAME == "raspbian" ]; then
+	IS_A_PI=true
+fi
 
-#download file for IHC Captain
-DLURL=http://jemi.dk/ihc/files/
-DLFILE=ihccaptain$DLFILEFIX.tar.gz
+# Calc windows sizes
+WT_HEIGHT=17
+WT_WIDTH=$(tput cols)
 
-# used for adding and removing stuff
-CHECKMARK="ihccaptainadded"
-
-CRONCMD="find /mnt/ram/ihccaptain/logins/ -type f -mtime +2 -delete 2>&1"
-CRONJOB="0 * * * * $CRONCMD"
-
-# colors for prompts
-RTXT="\e[0;31m"
-GTXT="\e[0;32m"
-LGTXT="\e[1;32m"
-#no color
-BTXT="\e[0m"
-#bold white
-WTXT="\e[1;37m"
-
-#Skip APT-get install
-INSTALLAPT=true
-
-#Global error feedback
-GERROR=false
-
-# webserver settings
-WEBPORT=80
-SSLPORT=443
-SSLINSTALL=true
-WEBINSTALL=true
-LETSENC=false
-DNSNAME=false
-EXTRASSL=/etc/ssl/certs/dhparam.pem
-
-SSLCERT1=/etc/ssl/certs/ssl-cert-snakeoil.pem
-SSLCERT2=/etc/ssl/private/ssl-cert-snakeoil.key
-CERTFILE=/etc/ssl/snakeoil.pem
+if [ -z "$WT_WIDTH" ] || [ "$WT_WIDTH" -lt 60 ]; then
+	WT_WIDTH=80
+fi
+if [ "$WT_WIDTH" -gt 178 ]; then
+	WT_WIDTH=120
+fi
+WT_MENU_HEIGHT=$(($WT_HEIGHT-7))
 
 ######################################################################################
 # install IHC Captain files
@@ -173,21 +255,30 @@ install_service() {
 setup_nginx() {
 	# automatic install or not -
 	AUTOINS=false
-	if [ -z ${2} ]; then
-		webserversetup
-	else
-		AUTOINS=true
-		WEBINSTALL=${2}
-		WEBPORT=${3}
-		SSLINSTALL=${4}
-		SSLPORT=${5}
-		if [ -z ${6} ];then
-			LETSENC=false
-			DNSNAME=_
+
+	# docker: Docker cant show any fancy ui so it uses defaults
+	if ! $INSIDE_DOCKER ; then
+		if [ -z ${2} ]; then
+			webserversetup
 		else
-			LETSENC=true
-			DNSNAME=${6}
+			AUTOINS=true
+			WEBINSTALL=${2}
+			WEBPORT=${3}
+			SSLINSTALL=${4}
+			SSLPORT=${5}
+			if [ -z ${6} ];then
+				LETSENC=false
+				DNSNAME=_
+			else
+				LETSENC=true
+				DNSNAME=${6}
+			fi
 		fi
+	else
+		# docker: Ports defined at top of script so we use these for docker
+		AUTOINS=true
+		WEBINSTALL=true
+		SSLINSTALL=false
 	fi
 
 	if($LETSENC);then
@@ -294,12 +385,14 @@ setup_nginx() {
 	# fix cgi.fix_pathinfo=0
 	echo cgi.fix_pathinfo=0 > /etc/php/7.3/fpm/conf.d/90-ihccaptain.ini
 
-	if ($AUTOINS);then
-		$DEST_DIR/tools/findmypi.sh -q
-	else
-		run_command "$DEST_DIR/tools/findmypi.sh -q" "Tilføjer/opdatere Raspberry Pi til http://jemi.dk/findmypi/"
+	# docker: we dont do find my pi on docker images
+	if ! $INSIDE_DOCKER ; then
+		if ($AUTOINS);then
+			$DEST_DIR/tools/findmypi.sh -q
+		else
+			run_command "$DEST_DIR/tools/findmypi.sh -q" "Tilføjer/opdatere Raspberry Pi til http://jemi.dk/findmypi/"
+		fi
 	fi
-
 }
 
 ######################################################################################
@@ -331,8 +424,11 @@ makeLogin(){
 	fi
 
 	# bash login
-	if (! grep --quiet $CHECKMARK /home/pi/.bashrc); then
-		echo "$TEXT" >> /home/pi/.bashrc
+	if [[ ! -f $HOMEDIR/.bashrc ]]; then
+		touch $HOMEDIR/.bashrc
+	fi
+	if (! grep --quiet $CHECKMARK $HOMEDIR/.bashrc); then
+		echo "$TEXT" >> $HOMEDIR/.bashrc
 	fi
 }
 
@@ -379,6 +475,11 @@ run_command(){
 ######################################################################################
 spinner()
 {
+	# docker: we dont display spinners
+	if $INSIDE_DOCKER ; then
+		echo "${2}..."
+		return 0
+	fi
 	hideinput
 	local delay=0.35
 	local curpos=-1;
@@ -554,7 +655,7 @@ fi
 ######################################################################################
 # Help
 ######################################################################################
-if [ "$1" == "-help" ] || [ "$1" == "help" ] || [ "$1" == "--help" ]; then
+if [[ $@ == *"help"* ]]; then
 	echo "Usage:"
 	echo "debug     : Show debug information"
 	echo "update    : Update IHC Captain";
@@ -568,17 +669,22 @@ fi
 ######################################################################################
 # Debug IHC Captain
 ######################################################################################
-if [ "$1" == "debug" ]; then
+if [[ $@ == *"debug"* ]]; then
 	clear
 	echo
 	echo "-[Debug af installer]------------------------------------"
 	echo
 	echo "Install dir      : $DEST_DIR"
-	echo "Download dir     : $DLURL$DLFILE"
+	echo "Run as user      : $USERNAME"
+	echo "Homedir          : $HOMEDIR"
+	echo "Download file    : $DLURL$DLFILE"
 	echo "APT install      : $INSTALLAPT"
 	echo "Distro name      : $DIST_NAME"
 	echo "Distro version   : $DIST_VERSION"
 	echo "HW info          : $DEVICEMODEL"
+	echo "Running raspbian : $IS_A_PI"
+	echo "Custom install   : $CUSTOM_INSTALL"
+	echo "Inside docker    : $INSIDE_DOCKER"
 	echo
 	exit 1
 fi
@@ -586,7 +692,7 @@ fi
 ######################################################################################
 # Fix rights
 ######################################################################################
-if [ "$1" == "fixrights" ]; then
+if [[ $@ == *"fixrights"* ]]; then
 	clear
 	cd $DEST_DIR
 	echo "Fixing rights..."
@@ -705,7 +811,7 @@ if [ "$1" == "uninstall" ] || [ "$1" == "remove" ]; then
 
 	# remove welcome prompts
 	sed -i "/$CHECKMARK-start/,/$CHECKMARK-end/d" /etc/rc.local
-	sed -i "/$CHECKMARK-start/,/$CHECKMARK-end/d" /home/pi/.bashrc
+	sed -i "/$CHECKMARK-start/,/$CHECKMARK-end/d" $HOMEDIR/.bashrc
 
 	# Remove service files
 	rm /etc/init.d/ihccaptain > /dev/null 2>&1
@@ -804,24 +910,32 @@ fi
 ######################################################################################
 # Info dialog
 ######################################################################################
-if (whiptail --backtitle "IHC Captain" --title "Velkommen..." --yesno "Velkommen til installation af IHC Captain\nDenne installation anbefales til \"rene\" Raspberry Pi installationer.\nDe nødvendige programmer for at kunne køre IHC Captain bliver installeret.\n\nØnsker du at installere programmerne manuelt tryk Afbryd nu.\nDer findes vejledning til manuel installation på http://jemi.dk/ihc/" --yes-button "Fortsæt" --no-button "Afbryd" $WT_HEIGHT $WT_WIDTH) then
-	#do nothing :)
-	:
-else
-	clear
-	echo
-	echo Farvel og tak \:\)
-	cleanup
-	exit 0
+# docker: dont show!
+if ! $INSIDE_DOCKER; then
+	if (whiptail --backtitle "IHC Captain" --title "Velkommen..." --yesno "Velkommen til installation af IHC Captain\nDenne installation anbefales til \"rene\" Raspberry Pi installationer.\nDe nødvendige programmer for at kunne køre IHC Captain bliver installeret.\n\nØnsker du at installere programmerne manuelt tryk Afbryd nu.\nDer findes vejledning til manuel installation på http://jemi.dk/ihc/" --yes-button "Fortsæt" --no-button "Afbryd" $WT_HEIGHT $WT_WIDTH) then
+		#do nothing :)
+		:
+	else
+		clear
+		echo
+		echo Farvel og tak \:\)
+		cleanup
+		exit 0
+	fi
 fi
 
 ######################################################################################
 # Ask for service
 ######################################################################################
-if (whiptail --backtitle "IHC Captain" --title "Installer autostart" --yesno "Skal IHC Captain automatisk starte op ved genstart af Raspberry Pi?" --yes-button "Ja" --no-button "Nej" $WT_HEIGHT $WT_WIDTH ) then
-	SERVICESTART=true
-else
+# docker: dont show!
+if $INSIDE_DOCKER; then
 	SERVICESTART=false
+else
+	if (whiptail --backtitle "IHC Captain" --title "Installer autostart" --yesno "Skal IHC Captain automatisk starte op ved genstart af Raspberry Pi?" --yes-button "Ja" --no-button "Nej" $WT_HEIGHT $WT_WIDTH ) then
+		SERVICESTART=true
+	else
+		SERVICESTART=false
+	fi
 fi
 
 # Start the normal installer
@@ -848,13 +962,14 @@ fi
 ######################################################################################
 #allow us and the www-data user to play with the dirs
 ######################################################################################
-run_command "usermod -a -G www-data pi" "Tilføjer pi brugeren til www-data gruppen"
+run_command "usermod -a -G www-data $USERNAME" "Tilføjer $USERNAME brugeren til www-data gruppen"
 
-## Allow www-data to control the device
-echo "www-data ALL=NOPASSWD: /sbin/poweroff, /sbin/reboot, /sbin/shutdown, /usr/sbin/service" > /etc/sudoers.d/ihccaptain
-
-## all the webserver to see GPU temp
-sudo usermod -aG video www-data
+## Allow www-data to control the device on raspians
+if $IS_A_PI ;then
+	echo "www-data ALL=NOPASSWD: /sbin/poweroff, /sbin/reboot, /sbin/shutdown, /usr/sbin/service" > /etc/sudoers.d/ihccaptain
+	## all the webserver to see GPU temp
+	sudo usermod -aG video www-data
+fi
 
 
 ######################################################################################
@@ -897,10 +1012,23 @@ if ($GERROR) ; then
 	echo "Der var en eller flere fejl - se ovenstående for en forklaring."
 	cleanup
 else
-	# Add to findmypi
-	run_command "$DEST_DIR/tools/findmypi.sh -q" "Tilføjer Raspberry Pi til http://jemi.dk/findmypi/"
-	# Show result
-	echo '
+	if CUSTOM_INSTALL ; then
+		echo
+		echo '
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+           IHC Captain installationen er færdig!
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+';
+		echo
+		echo "Bemærk at den beror på de to services 'nginx' og 'php7.3-fpm'"
+		echo
+		echo "IHC Captain kan tilgåes på http://localhost:$WEBPORT/"
+		echo
+	else
+		# Add to findmypi
+		run_command "$DEST_DIR/tools/findmypi.sh -q" "Tilføjer Raspberry Pi til http://jemi.dk/findmypi/"
+		# Show result
+		echo '
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
            IHC Captain installationen er færdig!
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -909,8 +1037,10 @@ else
 
 Det anbefales at du genstarter din Raspberry Pi nu - dette gøres med:
  sudo reboot';
-	echo
-	echo "... og det var http://jemi.dk/findmypi/ du skulle åbne i din browser :)"
-	echo
+		echo
+		echo "... og det var http://jemi.dk/findmypi/ du skulle åbne i din browser :)"
+		echo
+
+	fi
 	cleanup
 fi

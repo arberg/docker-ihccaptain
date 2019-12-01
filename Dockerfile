@@ -6,10 +6,10 @@ RUN	apt-add-repository -y ppa:ondrej/php
 
 COPY VERSION .
 COPY host/.bash_aliases /root
-COPY host/install_ubuntu.sh /tmp
+COPY host/install /tmp
 #RUN useradd pi
-RUN chmod 755 /tmp/*.sh
-RUN ["/bin/bash", "-c", "/tmp/install_ubuntu.sh docker"]
+RUN chmod 755 /tmp/install
+RUN ["/bin/bash", "-c", "/tmp/install docker"]
 # Backup the generated serverconfig.json so we can later mount image with host-mounted /data folder and copy this file into it
 RUN cp -R /opt/ihccaptain/data /opt/ihccaptain/dataOrg
 

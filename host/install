@@ -1,54 +1,95 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
-# IHC CAPTAIN INSTALLER - V1.07a
+# IHC CAPTAIN INSTALLER - V1.13 - with custom and docker support
 #
 ######################################################################################
 # Setup variables
 ######################################################################################
-# set -ex
 TEMP_DIR=/tmp
 
-# Docker added start >>
-IS_DOCKER=false
-IS_RASPBERRY_OS=true
-USE_SPINNER=true
-DO_FIND_PI=true
-if [ "$1" == "docker" ] ; then
-	IS_DOCKER=true
-fi
-if $IS_DOCKER ; then
-	IS_RASPBERRY_OS=false
-	# Spinner does not work nicely in my putty -> docker tty
-	USE_SPINNER=false
-	# FIND PI does not work on my docker
-	DO_FIND_PI=false
-	echo "Running docker setup..."
-fi
+#running a custom install not
+CUSTOM_INSTALL=false
+# automatic try and detect docker - can be forced by launching with docker as a argument
+INSIDE_DOCKER=false
+# run IHC Captain has this user
+USERNAME=pi
+# quick lookup are we a raspberry pi or not - actually it checks the os for rasbian
+IS_A_PI=false
 
-# ALLOW TO DOWNLOAD AT TEST FILE NAMED
-DLFILEFIX=""
+# destionation dir
+DEST_DIR=/opt/ihccaptain
+
+#device info (file does not exist on ubuntu)
+DEVICEMODEL=$([[ -f /proc/device-tree/model ]] && (cat /proc/device-tree/model | tr '\0' '\n') || true)
+
+#download file for IHC Captain
+DLURL=http://jemi.dk/ihc/files/
+
+# What to download
+DLFILE=ihccaptain$DLFILEFIX.tar.gz
 if [ "$1" == "test" ] || [ "$2" == "test" ]; then
-	DLFILEFIX=-new
+	DLFILE=ihccaptain-new.tar.gz
 fi
 
-if ! $IS_RASPBERRY_OS ; then
-	if ! $IS_DOCKER ; then
-		echo "Tast det brugernavn du vil have ihccaptain til at køre under [ENTER]:"
-		read username
-	else
-		username=root
-	fi
-fi
+# used for adding and removing stuff
+CHECKMARK="ihccaptainadded"
 
-HOMEDIR=$(echo ~root)
-# Docker added end <<
+# Add to cron info
+CRONCMD="find /mnt/ram/ihccaptain/logins/ -type f -mtime +2 -delete 2>&1"
+CRONJOB="0 * * * * $CRONCMD"
 
-if $IS_DOCKER ; then
-	# Make a whiptail substitute that echos to terminal - pausing for question does not make sense as when building docker image as it is done by the developer
+# colors for prompts
+RTXT="\e[0;31m"
+GTXT="\e[0;32m"
+LGTXT="\e[1;32m"
+#no color
+BTXT="\e[0m"
+#bold white
+WTXT="\e[1;37m"
+
+#Skip APT-get install
+INSTALLAPT=true
+
+#Global error feedback
+GERROR=false
+
+# nginx webserver settings
+WEBPORT=80
+SSLPORT=443
+SSLINSTALL=true
+WEBINSTALL=true
+LETSENC=false
+DNSNAME=false
+EXTRASSL=/etc/ssl/certs/dhparam.pem
+
+SSLCERT1=/etc/ssl/certs/ssl-cert-snakeoil.pem
+SSLCERT2=/etc/ssl/private/ssl-cert-snakeoil.key
+CERTFILE=/etc/ssl/snakeoil.pem
+
+#INSIDE DOCKER then we dont ask a lot of questions
+if [[ -f /.dockerenv ]] || grep -Eq '(lxc|docker)' /proc/1/cgroup || [[ $@ == *"docker"* ]]; then
+	echo "IHC Captain custom installer for Docker..."
+	INSIDE_DOCKER=true;
+	USERNAME=root
+
+	# Wrapper functions for automatic installs
 	function whiptail {
-		echo "#########################################################################"
-		echo "### ERROR: $*"
-		echo "#########################################################################"
+		INPUTSTR="$@"
+		if ( grep --quiet "msgbox" <<< "$INPUTSTR" ); then
+			TITLE=$(sed 's/.*--title \(.*\) --.*/\1/' <<< "$INPUTSTR")
+			MSG=$(sed 's/.*--msgbox \(.*\)/\1/' <<< "$INPUTSTR")
+			echo
+			echo "[$TITLE]"
+			echo "¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯"
+			echo $MSG | sed 's/\\n/\n/g'
+			echo
+			echo "-------------------------------------------------------------------------"
+			echo
+		else
+			echo "#########################################################################"
+			echo "### ERROR: $*"
+			echo "#########################################################################"
+		fi
 	}
 	function clear {
 		# avoid printing error 'Term'
@@ -60,29 +101,40 @@ if $IS_DOCKER ; then
 		# avoid error
 		echo
 	}
-else
-	# Calc windows!
-	WT_HEIGHT=17
-	WT_WIDTH=$(tput cols)
-
-	if [ -z "$WT_WIDTH" ] || [ "$WT_WIDTH" -lt 60 ]; then
-		WT_WIDTH=80
-	fi
-	if [ "$WT_WIDTH" -gt 178 ]; then
-		WT_WIDTH=120
-	fi
-	WT_MENU_HEIGHT=$(($WT_HEIGHT-7))
 fi
-# ALLOW TO DOWNLOAD AT TEST FILE NAMED
-DLFILEFIX=""
-if [ "$1" == "test" ] || [ "$2" == "test" ]; then
-	DLFILEFIX=-new
+
+#CUSTOM INSTALL OPTIONS if requested or running inside docker from the above
+if [ "$1" == "custominstall" ]  || $INSIDE_DOCKER ; then
+	CUSTOM_INSTALL=true
+
+	#INSIDE DOCKER then we dont ask a lot of questions
+	if ! $INSIDE_DOCKER ; then
+		clear
+		echo "IHC Captain custom installer..."
+		echo "Tast det brugernavn du vil have ihccaptain til at køre under og tryk enter"
+		read USERNAME
+	fi
+
+	# strip bad chars to improve input
+	USERNAME=$(echo "$USERNAME" | tr -dc '[:alnum:]\n\r')
+
+	# validate username
+	if [ -z $USERNAME ]; then
+		echo "Blank username is bad... bye!"
+		exit 0;
+	fi
+fi
+
+# find homedir for the user and check it okay
+HOMEDIR=$(awk -F: -v v="$USERNAME" '{if ($1==v) print $6}' /etc/passwd)
+if [ ! -d "${HOMEDIR}" ] ;  then
+	echo Fatal error - homedir not found or unable to check for user \"$USERNAME\"
+	exit 0
 fi
 
 ######################################################################################
-#Version check and install dir
+#Version check for OS etc
 ######################################################################################
-#Install dir - where will the website be installed into
 SILENTUPDATE=false
 if [ "$1" == "webupdate" ]; then
 	SILENTUPDATE=true
@@ -95,8 +147,7 @@ if [[ -r /etc/os-release ]]; then
 	DIST_VERSION="${DIST_VERSION%\"}"
 	DIST_VERSION="${DIST_VERSION#\"}"
 
-	# Docker added  '&& ! $IS_DOCKER'
-	if [[ $DIST_NAME != raspbian ]] && ! $IS_DOCKER ; then
+	if ! $CUSTOM_INSTALL && [[ $DIST_NAME != raspbian ]]; then
 		if ($SILENTUPDATE) ; then
 			echo Failed to find OS/distribution:
 			echo $DIST_NAME
@@ -116,61 +167,31 @@ else
 	exit 1
 fi
 
-# Docker change added $IS_RASPBERRY_OS
-if $IS_RASPBERRY_OS && [[ $RASP_VERSION_NAME != *"stretch"* ]]; then
+if ! $CUSTOM_INSTALL && [[ $DIST_VERSION -lt 9 ]]; then
 	if ($SILENTUPDATE) ; then
 		echo "Failed to find right debian distribution - should be stretch"
 		exit 1
 	fi
-	whiptail --backtitle "IHC Captain" --title "Ukendt OS/distribution" --msgbox "Kunne ikke genkende din Linux distribution/OS" $WT_HEIGHT $WT_WIDTH
+	whiptail --backtitle "IHC Captain" --title "Ukendt OS/distribution" --msgbox "Kunne ikke genkende din Linux distribution/OS ($DIST_NAME / $DIST_VERSION)" $WT_HEIGHT $WT_WIDTH
 	exit 1
 fi
 
-DEST_DIR=/opt/ihccaptain
-# Docker change added if negative branch
-if ! $IS_DOCKER ; then
-	RPIVERSION=$(cat /proc/device-tree/model | tr '\0' '\n')
-else
-	RPIVERSION=""
+# make lookups easier later on
+if [ $DIST_NAME == "raspbian" ]; then
+	IS_A_PI=true
 fi
 
-#download file for IHC Captain
-DLURL=http://jemi.dk/ihc/files/
-DLFILE=ihccaptain$DLFILEFIX.tar.gz
+# Calc windows sizes
+WT_HEIGHT=17
+WT_WIDTH=$(tput cols)
 
-# used for adding and removing stuff
-CHECKMARK="ihccaptainadded"
-
-CRONCMD="find /mnt/ram/ihccaptain/logins/ -type f -mtime +2 -delete 2>&1"
-CRONJOB="0 * * * * $CRONCMD"
-
-# colors for prompts
-RTXT="\e[0;31m"
-GTXT="\e[0;32m"
-LGTXT="\e[1;32m"
-#no color
-BTXT="\e[0m"
-#bold white
-WTXT="\e[1;37m"
-
-#Skip APT-get install
-INSTALLAPT=true
-
-#Global error feedback
-GERROR=false
-
-# webserver settings
-WEBPORT=80
-SSLPORT=443
-SSLINSTALL=true
-WEBINSTALL=true
-LETSENC=false
-DNSNAME=false
-EXTRASSL=/etc/ssl/certs/dhparam.pem
-
-SSLCERT1=/etc/ssl/certs/ssl-cert-snakeoil.pem
-SSLCERT2=/etc/ssl/private/ssl-cert-snakeoil.key
-CERTFILE=/etc/ssl/snakeoil.pem
+if [ -z "$WT_WIDTH" ] || [ "$WT_WIDTH" -lt 60 ]; then
+	WT_WIDTH=80
+fi
+if [ "$WT_WIDTH" -gt 178 ]; then
+	WT_WIDTH=120
+fi
+WT_MENU_HEIGHT=$(($WT_HEIGHT-7))
 
 ######################################################################################
 # install IHC Captain files
@@ -234,7 +255,9 @@ install_service() {
 setup_nginx() {
 	# automatic install or not -
 	AUTOINS=false
-	if ! $IS_DOCKER ; then
+
+	# docker: Docker cant show any fancy ui so it uses defaults
+	if ! $INSIDE_DOCKER ; then
 		if [ -z ${2} ]; then
 			webserversetup
 		else
@@ -251,15 +274,15 @@ setup_nginx() {
 				DNSNAME=${6}
 			fi
 		fi
-
-		if($LETSENC);then
-			SSLINSTALL=true
-		fi
 	else
-		# Ports defined at top of script
+		# docker: Ports defined at top of script so we use these for docker
 		AUTOINS=true
 		WEBINSTALL=true
 		SSLINSTALL=false
+	fi
+
+	if($LETSENC);then
+		SSLINSTALL=true
 	fi
 
 	# Redirect port 80 - todo allow this in the configuration/too
@@ -362,9 +385,8 @@ setup_nginx() {
 	# fix cgi.fix_pathinfo=0
 	echo cgi.fix_pathinfo=0 > /etc/php/7.3/fpm/conf.d/90-ihccaptain.ini
 
-
-	# Docker added If around content
-	if $DO_FIND_PI ; then
+	# docker: we dont do find my pi on docker images
+	if ! $INSIDE_DOCKER ; then
 		if ($AUTOINS);then
 			$DEST_DIR/tools/findmypi.sh -q
 		else
@@ -402,11 +424,9 @@ makeLogin(){
 	fi
 
 	# bash login
-	# Docker added if
 	if [[ ! -f $HOMEDIR/.bashrc ]]; then
 		touch $HOMEDIR/.bashrc
 	fi
-	# Docker $HOMEDIR
 	if (! grep --quiet $CHECKMARK $HOMEDIR/.bashrc); then
 		echo "$TEXT" >> $HOMEDIR/.bashrc
 	fi
@@ -455,73 +475,73 @@ run_command(){
 ######################################################################################
 spinner()
 {
-	# Docker added if $USE_SPINNER around code and negative branch
-	if $USE_SPINNER ; then
-		hideinput
-		local delay=0.35
-		local curpos=-1;
-		local filchar="${GTXT}\u25A0${BTXT}"
-		local mark="${WTXT}\e[1m\u25A0\e[0${BTXT}"
-		local tdirect=true
-		local prstr=
-		# fix layout and cursors
-		tput civis
-		echo -n "[      ]"
-		tput cuf 1
-		# write program name/description
-		echo -n "$2"
-		# place cursor for updates
-		tput cub $(( ${#2} + 8 ))
-
-		#wait for process and draw progress bar while waiting
-		while $(kill -0 $1 > /dev/null 2>&1); do
-			if [ $curpos -gt 4 ]; then
-				tdirect=false
-			fi
-			if [ $curpos -le 0 ]; then
-				tdirect=true
-			fi
-			if ($tdirect);then
-				let curpos++
-			else
-				let curpos--
-			fi
-
-			# build the string
-			prstr=
-			local x=0
-			while [ $x -lt $curpos ];	do
-				prstr="${filchar}${prstr}"
-				x=$(( $x + 1 ))
-			done
-			prstr="${prstr}%s"
-			while [ $x -le 4 ];	do
-				prstr="${prstr}${filchar}"
-				x=$(( $x + 1 ))
-			done
-
-			# print it
-			printf -v echostr "$prstr" "${mark}"
-			echo -en $echostr
-			sleep $delay
-			tput cub 6
-		done
-		echo -en "${mark}${mark}${mark}${mark}${mark}${mark}"
-		sleep 0.3
-		tput cub 6
-		echo -en "${filchar}${filchar}${filchar}${filchar}${filchar}${filchar}"
-		sleep 0.2
-		tput cub 6
-		echo -en "${mark}${mark}${mark}${mark}${mark}${mark}"
-		sleep 0.3
-		tput cub 6
-		echo -en "${filchar}${filchar}${filchar}${filchar}${filchar}${filchar}"
-		sleep 0.2
-		tput cub 7
-		cleanup nonewline
-	else
+	# docker: we dont display spinners
+	if $INSIDE_DOCKER ; then
 		echo "${2}..."
+		return 0
 	fi
+	hideinput
+	local delay=0.35
+	local curpos=-1;
+	local filchar="${GTXT}\u25A0${BTXT}"
+	local mark="${WTXT}\e[1m\u25A0\e[0${BTXT}"
+	local tdirect=true
+	local prstr=
+	# fix layout and cursors
+	tput civis
+	echo -n "[      ]"
+	tput cuf 1
+	# write program name/description
+	echo -n "$2"
+	# place cursor for updates
+	tput cub $(( ${#2} + 8 ))
+
+	#wait for process and draw progress bar while waiting
+	while $(kill -0 $1 > /dev/null 2>&1); do
+		if [ $curpos -gt 4 ]; then
+			tdirect=false
+		fi
+		if [ $curpos -le 0 ]; then
+			tdirect=true
+		fi
+		if ($tdirect);then
+			let curpos++
+		else
+			let curpos--
+		fi
+
+		# build the string
+		prstr=
+		local x=0
+		while [ $x -lt $curpos ];	do
+			prstr="${filchar}${prstr}"
+			x=$(( $x + 1 ))
+		done
+		prstr="${prstr}%s"
+		while [ $x -le 4 ];	do
+			prstr="${prstr}${filchar}"
+			x=$(( $x + 1 ))
+		done
+
+		# print it
+		printf -v echostr "$prstr" "${mark}"
+		echo -en $echostr
+		sleep $delay
+		tput cub 6
+	done
+	echo -en "${mark}${mark}${mark}${mark}${mark}${mark}"
+	sleep 0.3
+	tput cub 6
+	echo -en "${filchar}${filchar}${filchar}${filchar}${filchar}${filchar}"
+	sleep 0.2
+	tput cub 6
+	echo -en "${mark}${mark}${mark}${mark}${mark}${mark}"
+	sleep 0.3
+	tput cub 6
+	echo -en "${filchar}${filchar}${filchar}${filchar}${filchar}${filchar}"
+	sleep 0.2
+	tput cub 7
+	cleanup nonewline
 }
 
 ######################################################################################
@@ -631,10 +651,11 @@ if [ "$1" == "-cleanup" ] || [ "$1" == "cleanup" ]; then
 	exit 0
 fi
 
+
 ######################################################################################
 # Help
 ######################################################################################
-if [ "$1" == "-help" ] || [ "$1" == "help" ] || [ "$1" == "--help" ]; then
+if [[ $@ == *"help"* ]]; then
 	echo "Usage:"
 	echo "debug     : Show debug information"
 	echo "update    : Update IHC Captain";
@@ -648,18 +669,22 @@ fi
 ######################################################################################
 # Debug IHC Captain
 ######################################################################################
-if [ "$1" == "debug" ]; then
+if [[ $@ == *"debug"* ]]; then
 	clear
 	echo
 	echo "-[Debug af installer]------------------------------------"
 	echo
 	echo "Install dir      : $DEST_DIR"
-	echo "Download dir     : $DLURL$DLFILE"
+	echo "Run as user      : $USERNAME"
+	echo "Homedir          : $HOMEDIR"
+	echo "Download file    : $DLURL$DLFILE"
 	echo "APT install      : $INSTALLAPT"
 	echo "Distro name      : $DIST_NAME"
 	echo "Distro version   : $DIST_VERSION"
 	echo "HW info          : $DEVICEMODEL"
-	echo "DOCKER           : $IS_DOCKER"
+	echo "Running raspbian : $IS_A_PI"
+	echo "Custom install   : $CUSTOM_INSTALL"
+	echo "Inside docker    : $INSIDE_DOCKER"
 	echo
 	exit 1
 fi
@@ -667,7 +692,7 @@ fi
 ######################################################################################
 # Fix rights
 ######################################################################################
-if [ "$1" == "fixrights" ]; then
+if [[ $@ == *"fixrights"* ]]; then
 	clear
 	cd $DEST_DIR
 	echo "Fixing rights..."
@@ -885,8 +910,8 @@ fi
 ######################################################################################
 # Info dialog
 ######################################################################################
-# Docker added if-wrapper
-if ! $IS_DOCKER ; then
+# docker: dont show!
+if ! $INSIDE_DOCKER; then
 	if (whiptail --backtitle "IHC Captain" --title "Velkommen..." --yesno "Velkommen til installation af IHC Captain\nDenne installation anbefales til \"rene\" Raspberry Pi installationer.\nDe nødvendige programmer for at kunne køre IHC Captain bliver installeret.\n\nØnsker du at installere programmerne manuelt tryk Afbryd nu.\nDer findes vejledning til manuel installation på http://jemi.dk/ihc/" --yes-button "Fortsæt" --no-button "Afbryd" $WT_HEIGHT $WT_WIDTH) then
 		#do nothing :)
 		:
@@ -902,11 +927,15 @@ fi
 ######################################################################################
 # Ask for service
 ######################################################################################
-# Docker added if-wrapper '! $IS_DOCKER && '
-if ! $IS_DOCKER && (whiptail --backtitle "IHC Captain" --title "Installer autostart" --yesno "Skal IHC Captain automatisk starte op ved genstart af Raspberry Pi?" --yes-button "Ja" --no-button "Nej" $WT_HEIGHT $WT_WIDTH ) then
-	SERVICESTART=true
-else
+# docker: dont show!
+if $INSIDE_DOCKER; then
 	SERVICESTART=false
+else
+	if (whiptail --backtitle "IHC Captain" --title "Installer autostart" --yesno "Skal IHC Captain automatisk starte op ved genstart af Raspberry Pi?" --yes-button "Ja" --no-button "Nej" $WT_HEIGHT $WT_WIDTH ) then
+		SERVICESTART=true
+	else
+		SERVICESTART=false
+	fi
 fi
 
 # Start the normal installer
@@ -933,13 +962,11 @@ fi
 ######################################################################################
 #allow us and the www-data user to play with the dirs
 ######################################################################################
-# Docker adedd $username and if around unchanged code below
-run_command "usermod -a -G www-data $username" "Tilføjer $username brugeren til www-data gruppen"
+run_command "usermod -a -G www-data $USERNAME" "Tilføjer $USERNAME brugeren til www-data gruppen"
 
-if ! $IS_DOCKER ; then
-	## Allow www-data to control the device
+## Allow www-data to control the device on raspians
+if $IS_A_PI ;then
 	echo "www-data ALL=NOPASSWD: /sbin/poweroff, /sbin/reboot, /sbin/shutdown, /usr/sbin/service" > /etc/sudoers.d/ihccaptain
-
 	## all the webserver to see GPU temp
 	sudo usermod -aG video www-data
 fi
@@ -974,7 +1001,9 @@ if ($SERVICESTART) ; then
 	install_service
 fi
 
-makeLogin
+if ! $INSIDE_DOCKER ; then
+	makeLogin
+fi
 
 ######################################################################################
 #All done
@@ -985,17 +1014,21 @@ if ($GERROR) ; then
 	echo "Der var en eller flere fejl - se ovenstående for en forklaring."
 	cleanup
 else
-	# Docker added if negative branch
-	if (( $DO_FIND_PI )) ; then
+	if $CUSTOM_INSTALL ; then
+		echo
+		echo '
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+           IHC Captain installationen er færdig!
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+';
+		echo
+		echo "Bemærk at den beror på de to services 'nginx' og 'php7.3-fpm'"
+		echo
+		echo "IHC Captain kan tilgåes på http://localhost:$WEBPORT/"
+		echo
+	else
 		# Add to findmypi
 		run_command "$DEST_DIR/tools/findmypi.sh -q" "Tilføjer Raspberry Pi til http://jemi.dk/findmypi/"
-	else
-		if ($IS_RASPBERRY_OS) ; then
-			echo "Skipping findmypi: $DEST_DIR/tools/findmypi.sh -q"
-		fi
-	fi
-	# Docker added if negative branch
-	if (( $IS_RASPBERRY_OS )); then
 		# Show result
 		echo '
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -1009,13 +1042,7 @@ Det anbefales at du genstarter din Raspberry Pi nu - dette gøres med:
 		echo
 		echo "... og det var http://jemi.dk/findmypi/ du skulle åbne i din browser :)"
 		echo
-	else
-		echo "IHC Captain installationen er færdig!"
-		echo
-		echo "Bemærk at den beror på de to services 'nginx' og 'php7.3-fpm'"
-		echo
-		echo "IHC Captain kan tilgåes på http://localhost:$WEBPORT/"
-		echo "(med mindre port er ændret i docker configuration)"
+
 	fi
 	cleanup
 fi
