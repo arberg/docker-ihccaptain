@@ -6,8 +6,7 @@ RUN	apt-add-repository -y ppa:ondrej/php
 
 COPY VERSION .
 COPY host/.bash_aliases /root
-COPY host/install /tmp
-#RUN useradd pi
+ADD http://jemi.dk/ihc/files/install /tmp/install
 RUN chmod 755 /tmp/install
 RUN ["/bin/bash", "-c", "/tmp/install docker"]
 # Backup the generated serverconfig.json so we can later mount image with host-mounted /data folder and copy this file into it

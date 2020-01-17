@@ -3,9 +3,9 @@ CURRENT_DIR="$( cd "$(dirname "$0")" ; pwd -P )"
 HOST_PORT=8100
 HOST_SSLPORT=9100
 DOCKER_NAME=IHCCaptain
-
+set -ex
 if [[ "$1" == "" ]] ; then
-	IMAGE=arberg/ihccaptain:latest
+	IMAGE=arberg/ihccaptain:auto
 else
 	IMAGE=$1
 fi

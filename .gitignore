@@ -2,3 +2,4 @@
 .user.md5
 .cache.md5
 host/previous_installs
+*.url
