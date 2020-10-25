@@ -12,7 +12,7 @@ set -ex
 BASE_DIR="$( cd "$(dirname "$0")" ; pwd -P )"
 chmod 755 "$BASE_DIR"/host/*.sh
 
-if [[ "$1" = "--no-cache" ]] ; then
+if [[ "$1" == "--no-cache" ]] ; then
 	echo "########### Fresh no-cache build ###########"
 	docker build --no-cache --rm -t $USERNAME/$IMAGE:latest .
 else

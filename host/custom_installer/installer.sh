@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# IHC CAPTAIN INSTALLER - V1.16: Fixed problems with hardcoded php versions when running update/changes on old versions
+# IHC CAPTAIN INSTALLER - V1.16: Custom (fixed php not running)
 #
 ######################################################################################
 # Setup variables
@@ -300,14 +300,11 @@ setup_nginx() {
 	TEMPDEST=/tmp/nginx.tpl
 	FINALDEST=/etc/nginx/sites-available/ihccaptain
 	PHPSOCK=$(ls /var/run/php/php*.sock 2>/dev/null | sed -n '1 p');
-	# If this script installs php it also sets version
-	if [ ! -z $PHPVER ] ; then
-		if ! $INSIDE_DOCKER && [ -z "$PHPSOCK" ]; then
-			echo "Unable to find PHP Socket fatal error"
-			exit 1
-		fi
-		PHPVER=$(echo $PHPSOCK| cut -d/ -f5| cut -c4-6)
+	if [ -z "$PHPSOCK" ]; then
+		echo "Unable to find PHP Socket fatal error"
+		exit 1
 	fi
+	PHPVER=$(echo $PHPSOCK| cut -d/ -f5| cut -c4-6)
 
 	# fix find my pi and server config
 	cp "${DEST_DIR}/installer/findmypi.sh" ${DEST_DIR}/tools/findmypi.sh
@@ -977,12 +974,10 @@ echo
 ######################################################################################
 if ($INSTALLAPT); then
 	export DEBIAN_FRONTEND=noninteractive
-	# PHPVER must correspand to directory name in /etc/php
-	PHPVER="7.3"
 	run_command "apt-get -mqqy update" "Opdatering af software arkiv" "wait"
-	run_command "apt-get -qqyf install ssl-cert certbot python-certbot-nginx lsof libnss-mdns sed screen unzip zip curl wget ca-certificates binutils" "Installere ekstra programmer" "wait"
-	run_command "apt-get -qqyf install nginx" "Installere webserver, nginx" "wait"
-	run_command "apt-get -qqyf install php7.3-fpm php7.3-curl php7.3-soap php7.3-mbstring php7.3-xml php7.3-mysql" "Installere PHP 7.3" "wait"
+	run_command "apt-get -qqyf install ssl-cert certbot python-certbot-nginx lsof libnss-mdns sed screen unzip zip curl wget ca-certificates binutils" "Installerer ekstra programmer" "wait"
+	run_command "apt-get -qqyf install nginx" "Installerer webserver, nginx" "wait"
+	run_command "apt-get -qqyf install php7.3-fpm php7.3-curl php7.3-soap php7.3-mbstring php7.3-xml php7.3-mysql" "Installerer PHP 7.3" "wait"
 	run_command "apt-get -qqy autoclean" "Oprydning af software arkiv" "wait"
 	run_command "apt-get -qqyf autoremove" "Fjerner gamle programmer" "wait"
 fi
@@ -1009,15 +1004,21 @@ install_ihccaptain
 ######################################################################################
 #Start webserver
 ######################################################################################
-setup_nginx
-run_command "/etc/init.d/nginx restart" "Webserver genstart"
 PHPFPM=$(ls /etc/init.d/php*-fpm 2>/dev/null | sed -n '1 p');
 PHPFPM=${PHPFPM##*/}
 if [ -z "$PHPFPM" ]; then
-	echo "Unable to restart the php-fpm service"
-else
-	run_command "/usr/sbin/service $PHPFPM restart" "$PHPFPM genstart"
+	echo "Error: Unable to find the php-fpm service"
 fi
+if ! /usr/sbin/service $PHPFPM status ; then
+	# We need it to be running, or setup_nginx cannot find socket. It won't be running if this script installs php (on docker)
+	run_command "/usr/sbin/service $PHPFPM start" "$PHPFPM Start"
+fi
+/usr/sbin/service $PHPFPM status
+
+setup_nginx
+
+run_command "/etc/init.d/nginx restart" "Webserver genstart"
+run_command "/usr/sbin/service $PHPFPM restart" "$PHPFPM genstart"
 
 # Change the users/rights for the folders
 fixRights

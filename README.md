@@ -15,9 +15,12 @@ Note that it may be necessary to change the default port to an unused port on yo
 
 * Manually update file VERSION
 * run build.sh or just release.sh
+* or `./build.sh; ./run.sh` to build at run the build
 
 ## How To debug build-process if it fails
 
 Probably its the install.sh that wil be failing. Download (install script)[http://jemi.dk/ihc/files/install] to host/custom_installer/installer.sh, and edit Dockerfile so it uses the downloaded version. See the ADD line. Now we can edit the build-script locally and run build.sh to build it.
+
+If IHC-captain docker fails to start, start a bash inside a container with `run_debug.sh <optional image>`.
 
 Alternatively edit the Dockerfile so it stops at where it fails, and run the container with interactive bash. Search for `how to debug Dockerfile` to learn more, ie. https://www.joyfulbikeshedding.com/blog/2019-08-27-debugging-docker-builds.html
