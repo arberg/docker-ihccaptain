@@ -4,8 +4,8 @@ if [ ! -z "$1" ] ; then
 	VERSION=$1
 fi
 echo "VERSION=$VERSION"
-echo "USERNAME=arberg"
-echo "IMAGE=ihccaptain"
+echo "USERNAME=$USERNAME"
+echo "IMAGE=$IMAGE"
 
 set -ex
 
