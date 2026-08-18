@@ -17,7 +17,7 @@ services:
       - /etc/localtime:/etc/localtime:ro
     labels:
       net.unraid.docker.webui: http://[IP]:[PORT:80]/
-      net.unraid.docker.icon: https://github.com/arberg.png
+      net.unraid.docker.icon: https://jemi.dk/ihc/gfx/captain_512x512.png
       net.unraid.docker.shell: /bin/bash
 
   ihccaptain-debug:
