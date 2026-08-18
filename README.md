@@ -16,7 +16,7 @@ Docker Compose.
 
 The default WebUI is published on port 8100 and the secure port on 9100. The
 stack preserves the existing data directories below
-`/mnt/user/appdata/ihccaptain/`.
+`/mnt/user/docker/ihccaptain/`.
 
 ## How To build docker image again
 
