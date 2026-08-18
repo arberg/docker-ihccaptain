@@ -3,3 +3,10 @@
 .cache.md5
 host/previous_installs
 *.url
+.env
+.compose.lock
+has_build
+last_cmd.log
+last_result.json
+started_at
+autostart

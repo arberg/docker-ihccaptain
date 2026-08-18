@@ -1,0 +1,39 @@
+name: ihccaptain
+
+services:
+  ihccaptain:
+    build:
+      context: .
+    image: ${IHCCAPTAIN_IMAGE:-arberg/ihccaptain:latest}
+    container_name: IHCCaptain
+    restart: unless-stopped
+    privileged: true
+    ports:
+      - "${IHCCAPTAIN_HTTP_PORT:-8100}:80"
+      - "${IHCCAPTAIN_HTTPS_PORT:-9100}:443"
+    volumes:
+      - ${IHCCAPTAIN_DATA_DIR:-/mnt/user/appdata/ihccaptain/data}:/opt/ihccaptain/data
+      - ${IHCCAPTAIN_HOST_DIR:-/mnt/user/appdata/ihccaptain/host}:/host
+      - /etc/localtime:/etc/localtime:ro
+    labels:
+      net.unraid.docker.webui: http://[IP]:[PORT:80]/
+      net.unraid.docker.icon: https://github.com/arberg.png
+      net.unraid.docker.shell: /bin/bash
+
+  ihccaptain-debug:
+    profiles:
+      - debug
+    image: ${IHCCAPTAIN_DEBUG_IMAGE:-arberg/ihccaptain:auto}
+    container_name: IHCCaptain_debug
+    stdin_open: true
+    tty: true
+    privileged: true
+    ports:
+      - "${IHCCAPTAIN_HTTP_PORT:-8100}:80"
+      - "${IHCCAPTAIN_HTTPS_PORT:-9100}:443"
+    volumes:
+      - ${IHCCAPTAIN_DATA_DIR:-/mnt/user/appdata/ihccaptain/data}:/opt/ihccaptain/data
+      - ${IHCCAPTAIN_HOST_DIR:-/mnt/user/appdata/ihccaptain/host}:/host
+      - /etc/localtime:/etc/localtime:ro
+    entrypoint:
+      - /bin/bash
