@@ -5,7 +5,7 @@ services:
     build:
       context: .
     image: ${IHCCAPTAIN_IMAGE:-arberg/ihccaptain:latest}
-    container_name: IHCCaptain
+    container_name: ihccaptain
     restart: unless-stopped
     privileged: true
     ports:
@@ -24,7 +24,7 @@ services:
     profiles:
       - debug
     image: ${IHCCAPTAIN_DEBUG_IMAGE:-arberg/ihccaptain:auto}
-    container_name: IHCCaptain_debug
+    container_name: ihccaptain-debug
     stdin_open: true
     tty: true
     privileged: true
